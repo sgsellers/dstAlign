@@ -276,7 +276,7 @@ def align_images(data_image, data_dict, reference_smap, niter=3, rotation_correc
             bottom_left=data_map.bottom_left_coord,
             top_right=data_map.top_right_coord
         )
-        correlation_map = scind.correlate(interpolated_data, reference_submap.data)
+        correlation_map = scig.correlate2d(interpolated_data, reference_submap.data, mode='same', boundary='symm')
         y, x = np.unravel_index(np.argmax(correlation_map), correlation_map.shape)
         y0 = interpolated_data.shape[0]/2
         x0 = interpolated_data.shape[1]/2
