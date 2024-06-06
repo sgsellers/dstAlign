@@ -272,10 +272,16 @@ def align_images(data_image, data_dict, reference_smap, niter=3, rotation_correc
     # Reference image submaps.
     for i in range(niter):
         data_map = smap.Map(data_image, data_dict)
-        reference_submap = reference_smap.submap(
-            bottom_left=data_map.bottom_left_coord,
-            top_right=data_map.top_right_coord
-        )
+        # Near or beyond the limb, HMI and AIA pixel coordinates break down.
+        # To be safe, we're going to do some fuckery with coordinates instead of a simple submap.
+        # We'll want to pad the edges, just in case the coordinates are very far off.
+        # Pad by FOV/2 (i.e., and extra FOV/4 on each side)
+        with frames.Helioprojective.assume_spherical_screen(data_map.observer_coordinate):
+            reference_submap = reference_smap.reproject_to(data_map.wcs)
+        # reference_submap = reference_smap.submap(
+        #     bottom_left=data_map.bottom_left_coord,
+        #     top_right=data_map.top_right_coord
+        # )
         correlation_map = scig.correlate2d(interpolated_data, reference_submap.data, mode='same', boundary='symm')
         y, x = np.unravel_index(np.argmax(correlation_map), correlation_map.shape)
         y0 = interpolated_data.shape[0]/2
