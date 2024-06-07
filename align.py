@@ -302,10 +302,12 @@ def align_images(data_image, data_dict, reference_smap, niter=3, rotation_correc
     # Sequential fine alignment
     for i in range(niter):
         data_map = smap.Map(data_image, data_dict)
-        reference_submap = reference_smap.submap(
-            bottom_left=data_map.bottom_left_coord,
-            top_right=data_map.top_right_coord
-        )
+        with frames.Helioprojective.assume_spherical_screen(data_map.observer_coordinate):
+            reference_submap = reference_smap.reproject_to(data_map.wcs)
+        # reference_submap = reference_smap.submap(
+        #     bottom_left=data_map.bottom_left_coord,
+        #     top_right=data_map.top_right_coord
+        # )
         reference_xgrid = np.linspace(
             0,
             reference_submap.scale[0].value * (reference_submap.data.shape[1] - 1),
