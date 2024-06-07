@@ -219,7 +219,7 @@ def read_rosa_zyla_image(filename, slat=None, slon=None, dx=None, dy=None, rotat
         return image, header_dict
 
 
-def align_images(data_image, data_dict, reference_smap, niter=3, rotation_correct=False):
+def align_images_depr(data_image, data_dict, reference_smap, niter=3, rotation_correct=False):
     """
     Performs iterative bulk and fine alignment of reference and data image.
     General flow is:
@@ -250,6 +250,8 @@ def align_images(data_image, data_dict, reference_smap, niter=3, rotation_correc
     :return data_dict: dictionary
         Python dictionary of correct alignment keywords, modified from data_dict.
     """
+    # Using sunpy's reproject actually does the interpolation on the reference up to the data image.
+    # We're gonna have to rethink some things.
     xgrid = np.linspace(
         0,
         data_dict['CDELT1'] * (data_image.shape[1] - 1),
@@ -365,6 +367,80 @@ def align_images(data_image, data_dict, reference_smap, niter=3, rotation_correc
             len(reference_fine_ygrid), len(reference_fine_xgrid)
         )
         rotangle = determine_relative_rotation(interpolated_data, refinterp)
+        data_dict['CROTA2'] = rotangle
+
+    return data_dict
+
+
+def align_images(data_image, data_dict, reference_smap, niter=3, rotation_correct=False):
+    """
+    Performs iterative bulk and fine alignment of reference and data image.
+    General flow is:
+        1.) Interpolate reference image to data image scale
+        2.) Align reference image to data image
+        3.) Update centering of reference image
+        4.) Repeat niter times
+    :param data_image: numpy.ndarray
+        2D array containing image to align. Expected to be rotated to solar north (or nearly so),
+        and cropped to avoid hairlines.
+    :param data_dict: dictionary
+        Python dictionary of alignment-focused FITS keywords. This should have:
+            a.) DATE-AVG
+            b.) CDELT1/2
+            c.) CRPIX1/2 NOTE: MUST Be altered for new yrange if hairlines are clipped
+            d.) CTYPE1/2
+            e.) CUNIT1/2
+            f.) CRVAL1/2
+        Provided that these are referenced to the center, cropping the hairlines shouldn't matter.
+    :param reference_smap: sunpy.map.Map
+        Full-disk Sunpy Map. Generally HMI
+    :param niter: int
+        Number of sequential alignments to perform. Equal for coarse and fine alignments
+    :param rotation_correct: bool
+        If true, after fine-alignment, attempts to determine relative rotation via linear correlation
+    :return data_dict: dictionary
+        Python dictionary of correct alignment keywords, modified from data_dict.
+    """
+    # Sequential Alignment. Sometimes DST coordinates are far off, so repeat alignment with increasingly-accurate
+    # Reference image submaps.
+    for i in range(niter):
+        # Near or beyond the limb, HMI and AIA pixel coordinates break down.
+        # To be safe, we're going to do some fuckery with coordinates instead of a simple submap.
+        # In the future, we'll probably want to pad the reference FOV, just in case the coordinates are very far off.
+        # To do that, we'll need a dummy map of a larger size
+        # Pad by FOV/2 (i.e., and extra FOV/4 on each side)
+        dummy_array = np.ones(
+            (data_image.shape[0] + int(data_image.shape[0]/2),
+             data_image.shape[1] + int(data_image.shape[1]/2))
+        )
+        dummy_header = data_dict.copy()
+        dummy_header['CRPIX1'] = dummy_array.shape[1]/2
+        dummy_header['CRPIX2'] = dummy_array.shape[0]/2
+        dummy_map = smap.Map(dummy_array, dummy_header)
+        with frames.Helioprojective.assume_spherical_screen(dummy_map.observer_coordinate):
+            reference_submap = reference_smap.reproject_to(dummy_map.wcs)
+        # Use fftconvolve for correlation otherwise it's unbearably slow
+        # Means we need to subtract off the image means and flip the reference image
+        correlation_map = scig.fftconvolve(
+            data_image - np.nanmean(data_image),
+            (reference_submap.data - np.nanmean(reference_submap.data))[::-1, ::-1],
+            mode='same'
+        )
+        y, x = np.unravel_index(np.argmax(correlation_map), correlation_map.shape)
+        y0 = data_image.shape[0]/2
+        x0 = data_image.shape[1]/2
+        y0ref = reference_submap.data.shape[0]/2
+        x0ref = reference_submap.data.shape[1]/2
+        yshift = y0 - y - (y0 - y0ref)
+        xshift = x0 - x - (x0 - x0ref)
+        data_dict['CRVAL1'] = dummy_map.center.Tx.value + (xshift * dummy_map.scale[0].value)
+        data_dict['CRVAL2'] = dummy_map.center.Ty.value + (yshift * dummy_map.scale[1].value)
+
+    if rotation_correct:
+        data_map = smap.Map(data_image, data_dict)
+        with frames.Helioprojective.assume_spherical_screen(data_map.observer_coordinate):
+            reference_submap = reference_smap.reproject_to(data_map.wcs)
+        rotangle = determine_relative_rotation(data_image, reference_submap.data)
         data_dict['CROTA2'] = rotangle
 
     return data_dict
