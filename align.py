@@ -416,7 +416,7 @@ def align_images(data_image, data_dict, reference_smap, niter=3, rotation_correc
         dummy_header = data_dict.copy()
         dummy_header['CRPIX1'] = dummy_array.shape[1]/2
         dummy_header['CRPIX2'] = dummy_array.shape[0]/2
-        dummy_map = smap.Map(dummy_array, dummy_header)
+        dummy_map = smap.Map(data_image, data_dict)
         with frames.Helioprojective.assume_spherical_screen(dummy_map.observer_coordinate):
             reference_submap = reference_smap.reproject_to(dummy_map.wcs)
         # Use fftconvolve for correlation otherwise it's unbearably slow
