@@ -11,8 +11,6 @@ import warnings
 import cv2
 from sunpy.net import Fido, attrs as a
 
-import align
-
 
 class PointingError(Exception):
     """
