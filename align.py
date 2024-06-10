@@ -11,6 +11,8 @@ import warnings
 import cv2
 from sunpy.net import Fido, attrs as a
 
+import align
+
 
 class PointingError(Exception):
     """
@@ -444,6 +446,49 @@ def align_images(data_image, data_dict, reference_smap, niter=3, rotation_correc
         data_dict['CROTA2'] = rotangle
 
     return data_dict
+
+
+def align_rotate_map(data_image, data_dict, reference_smap, niter=3, rotation_correct=True):
+    """
+    Prepares a rotated data image for alignment using the align_images function.
+    This function wraps align_images after derotating the image to approximately Solar-North.
+    This should be used for alignment in any case where the rotation angle is greater than about 5 degrees.
+    :param data_image: numpy.ndarray
+        2d numpy array containing original reduced image
+    :param data_dict: dictionary
+        Contains all neccessary FITS keywords
+    :param reference_smap: sunpy.map.Map
+        Reference image sunpy map. Typically assumed to be an HMI or similar full-disk map
+    :param niter: int
+        Passed to align_images. Performs sequential alignment, which may be useful in the case where the DST
+        coordinates are extremely far off the correct values (more than ~1/2 the FOV)
+    :param rotation_correct: bool
+        If True, attempts a rotation correction with aligned image. Used to fine-tune CROTA2.
+        Usually, the DST rotation angles are pretty good, but if you're not sure, this will fine-tune from
+        +/- 5 degrees on an 0.2 degree grid.
+    :return corrected_rotated_dictionary: dictionary
+        Python dictionary containing updated FITS keywords.
+    """
+    data_map = smap.Map(data_image, data_dict)
+    rotated_map = data_map.rotate(order=3)
+    # Doing the rotation pads with nans.
+    # We have to remove these, and the safest way is to replace them with the mean
+    rotated_image = np.nan_to_num(rotated_map.data)
+    rotated_image[rotated_image == 0] = np.nanmean(data_image)
+    # Creating a derotated header.
+    rotated_header = data_dict.copy()
+    rotated_header['CRPIX1'] = rotated_image.shape[1]/2
+    rotated_header['CRPIX2'] = rotated_image.shape[0]/2
+    rotated_header['CROTA2'] = 0
+    corrected_rotated_dictionary = align.align_images(
+        rotated_image, rotated_header, reference_smap,
+        niter=niter, rotation_correct=rotation_correct
+    )
+    # Updating the corrected dictionary to have the correct rotation angle and image sizes
+    corrected_rotated_dictionary['CROTA2'] = data_dict['CROTA2'] + corrected_rotated_dictionary['CROTA2']
+    corrected_rotated_dictionary['CRPIX1'] = data_dict['CRPIX1']
+    corrected_rotated_dictionary['CRPIX2'] = data_dict['CRPIX2']
+    return corrected_rotated_dictionary
 
 
 def determine_relative_rotation(data_image, reference_image):
