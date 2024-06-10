@@ -478,7 +478,7 @@ def align_rotate_map(data_image, data_dict, reference_smap, niter=3, rotation_co
     rotated_header['CRPIX1'] = rotated_image.shape[1]/2
     rotated_header['CRPIX2'] = rotated_image.shape[0]/2
     rotated_header['CROTA2'] = 0
-    corrected_rotated_dictionary = align.align_images(
+    corrected_rotated_dictionary = align_images(
         rotated_image, rotated_header, reference_smap,
         niter=niter, rotation_correct=rotation_correct
     )
